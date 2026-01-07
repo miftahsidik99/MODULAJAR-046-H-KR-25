@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { User, UserRole, ResetRequest } from '../types';
 import { getProvinces, getRegencies, getDistricts, Region } from '../services/locationService';
 import { findSchoolsWithAI } from '../services/geminiService';
-import { Lock, User as UserIcon, School, ArrowLeft, MapPin, Loader2, CheckCircle, Sparkles, Globe, AlertCircle } from 'lucide-react';
+import { Lock, User as UserIcon, School, ArrowLeft, MapPin, Loader2, CheckCircle, Sparkles, Globe, AlertCircle, AlertTriangle } from 'lucide-react';
 
 interface AuthProps {
   onLogin: (user: User) => void;
@@ -95,10 +95,15 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
                 setSearchStatus('not_found');
                 setIsManualSchool(true); // Auto switch to manual but allow user to see why
             }
-          } catch (e) {
+          } catch (e: any) {
             console.error(e);
             setSchoolOptions([]);
-            setSearchStatus('error');
+            // Detect missing key specific error
+            if (e.message && (e.message.includes("API Key") || e.message.includes("configuration missing"))) {
+                setSearchStatus('missing_key');
+            } else {
+                setSearchStatus('error');
+            }
             setIsManualSchool(true);
           } finally {
             setIsLoadingLocation(false);
@@ -311,10 +316,16 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
                             <span>Data sekolah tidak ditemukan. Mengalihkan ke input manual.</span>
                         </div>
                     )}
+                    {searchStatus === 'missing_key' && !isManualSchool && (
+                        <div className="text-[10px] bg-red-50 text-red-700 p-2 rounded border border-red-200 mb-2 flex items-start gap-1">
+                            <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0"/>
+                            <span>API Key tidak terdeteksi! Mohon set `VITE_GEMINI_API_KEY` di Dashboard Vercel.</span>
+                        </div>
+                    )}
                     {searchStatus === 'error' && !isManualSchool && (
                         <div className="text-[10px] bg-red-50 text-red-700 p-2 rounded border border-red-200 mb-2 flex items-start gap-1">
                             <AlertCircle className="w-3 h-3 mt-0.5 shrink-0"/>
-                            <span>Gagal terhubung ke AI (Cek Koneksi/API Key). Gunakan manual.</span>
+                            <span>Koneksi AI Gagal (Timeout/Limit). Gunakan manual.</span>
                         </div>
                     )}
 

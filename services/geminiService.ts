@@ -2,10 +2,12 @@ import { GoogleGenAI } from "@google/genai";
 import { ModuleConfig, AIRecommendation } from "../types";
 
 const getClient = () => {
+  // Support both injected process.env (from vite.config) and native Vite env vars
   const apiKey = process.env.API_KEY;
+  
   if (!apiKey) {
-    console.error("API Key is missing. Check Vercel Environment Variables.");
-    throw new Error("API Key not found.");
+    console.error("CRITICAL: API Key is missing.");
+    throw new Error("API Key configuration missing. Please check Vercel Environment Variables.");
   }
   return new GoogleGenAI({ apiKey });
 };
@@ -13,20 +15,23 @@ const getClient = () => {
 export const findSchoolsWithAI = async (province: string, regency: string, district: string): Promise<string[]> => {
   const ai = getClient();
   
-  // Prompt disederhanakan namun dipertegas untuk format output
+  // Prompt diperbarui: Meminta format List (bullet points) sebagai alternatif JSON
+  // Ini lebih mudah dipahami model saat menggunakan Tools
   const prompt = `
-    Carikan daftar nama sekolah SD dan MI di: 
+    Tugas: Cari nama-nama Sekolah Dasar (SD) dan Madrasah Ibtidaiyah (MI) nyata di lokasi ini:
     Kecamatan ${district}, ${regency}, ${province}.
     
-    Gunakan Google Search untuk data nyata.
+    Gunakan Google Search.
     
-    PENTING:
-    1. HANYA berikan output berupa JSON Array of Strings.
-    2. JANGAN gunakan markdown formatting (seperti \`\`\`json).
-    3. JANGAN sertakan angka referensi/sitasi dalam nama sekolah.
-    
-    Contoh Output Benar:
-    ["SDN 1 ${district}", "SDN 2 ${district}", "MIS Al-Falah"]
+    Berikan output HANYA berupa daftar nama sekolah yang dipisahkan baris baru.
+    Jangan gunakan penomoran, bullet points, atau tanda kutip/kurung siku JSON.
+    Bersihkan nama sekolah dari referensi angka (misal [1]).
+
+    Contoh Output yang Diharapkan:
+    SDN 1 ${district}
+    SDN 2 ${district}
+    MIS Al Hidayah
+    SD Swasta Harapan
   `;
 
   try {
@@ -41,49 +46,45 @@ export const findSchoolsWithAI = async (province: string, regency: string, distr
 
     let text = response.text || '';
     
-    // 1. Bersihkan Markdown code blocks (```json ... ```)
-    text = text.replace(/```json|```/g, '');
-    
-    // 2. Bersihkan sitasi Google Search (contoh: [1], [2], [source])
-    text = text.replace(/\[\d+\]/g, '').replace(/\[source\]/g, '');
+    // Cleaning: Hapus markdown code blocks jika AI bandel
+    text = text.replace(/```json|```/g, '').replace(/```/g, '');
+    // Cleaning: Hapus referensi sitasi [1], [source], dll
+    text = text.replace(/\[.*?\]/g, '');
 
-    // 3. Coba Extract JSON Array menggunakan Regex
-    const jsonMatch = text.match(/\[[\s\S]*\]/);
-    
-    if (jsonMatch) {
-        try {
-            const parsed = JSON.parse(jsonMatch[0]);
-            if (Array.isArray(parsed)) {
-                // Filter hasil agar hanya string dan bersihkan whitespace
-                return parsed
-                    .filter(item => typeof item === 'string')
-                    .map(item => item.trim())
-                    .sort();
-            }
-        } catch (e) {
-            console.warn("JSON Parse failed, attempting fallback parsing...");
-        }
-    }
-
-    // 4. Fallback: Jika JSON gagal, coba ambil baris per baris (jika AI membandel memberi list)
-    // Mencari baris yang diawali tanda "-" atau angka "1." atau berisi kata "SD/MI"
+    // Parsing Strategy: Split by Newline
+    // Ini jauh lebih stabil daripada memaksakan JSON parse pada hasil search
     const lines = text.split('\n');
     const schools: string[] = [];
-    
+
     for (const line of lines) {
-        const cleanLine = line.trim().replace(/^[-*•\d\.]+\s+/, ''); // Hapus bullet/numbering
-        if ((cleanLine.toUpperCase().includes('SD') || cleanLine.toUpperCase().includes('MI')) && cleanLine.length > 5) {
-            schools.push(cleanLine);
+        // Bersihkan whitespace dan karakter non-huruf di awal (bullet/angka)
+        const cleanLine = line.trim().replace(/^[-*•\d\.]+\s+/, '');
+        
+        // Filter validasi sederhana: Minimal 5 huruf dan mengandung kata kunci sekolah
+        const upper = cleanLine.toUpperCase();
+        if (cleanLine.length > 5 && (upper.includes('SD') || upper.includes('MI') || upper.includes('SEKOLAH'))) {
+            // Hindari duplikasi
+            if (!schools.includes(cleanLine)) {
+                schools.push(cleanLine);
+            }
+        }
+    }
+    
+    // Jika strategi newline gagal, coba strategi JSON (fallback)
+    if (schools.length === 0) {
+        const jsonMatch = text.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+            try {
+                const parsed = JSON.parse(jsonMatch[0]);
+                if (Array.isArray(parsed)) return parsed.map(String).sort();
+            } catch (e) { /* ignore */ }
         }
     }
 
-    if (schools.length > 0) return schools;
-
-    return [];
+    return schools.sort();
 
   } catch (error) {
     console.error("Error searching schools:", error);
-    // Kembalikan array kosong agar UI bisa handle ke manual input
     return [];
   }
 };
