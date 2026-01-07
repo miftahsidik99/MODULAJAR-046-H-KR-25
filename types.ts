@@ -3,12 +3,21 @@ export enum UserRole {
   GURU = 'GURU',
 }
 
+export interface UserActivity {
+  timestamp: number;
+  action: string; // e.g., 'LOGIN', 'CREATE_MODULE', 'LOGOUT'
+  details: string;
+}
+
 export interface User {
   username: string;
   role: UserRole;
+  password?: string; // Stored for admin monitoring (Prototype only)
   name?: string;
   nip?: string; // NIP or NUPTK
   school?: string;
+  lastLogin?: number;
+  activityLogs?: UserActivity[];
 }
 
 export interface TeacherProfile {
@@ -77,4 +86,13 @@ export interface LearningModel {
 export interface LearningMethod {
   name: string;
   description: string;
+}
+
+export interface ResetRequest {
+  id: string;
+  username: string;
+  name: string;
+  school: string;
+  timestamp: number;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
 }

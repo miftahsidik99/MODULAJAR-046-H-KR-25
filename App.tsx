@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { User, ModuleConfig } from './types';
+import { User, ModuleConfig, UserRole, UserActivity } from './types';
 import Auth from './components/Auth';
 import ModuleForm from './components/ModuleForm';
 import ModulePreview from './components/ModulePreview';
+import AdminDashboard from './components/AdminDashboard';
 import { generateModuleContent } from './services/geminiService';
 import { FileText, LogOut, History, PlusCircle } from 'lucide-react';
 
@@ -13,7 +14,6 @@ const App: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [view, setView] = useState<'form' | 'preview' | 'history'>('form');
 
-  // Load user session mock
   useEffect(() => {
     const savedUser = localStorage.getItem('currentUser');
     if (savedUser) {
@@ -25,12 +25,37 @@ const App: React.FC = () => {
     }
   }, []);
 
+  // Helper to save log
+  const logActivity = (u: User, action: string, details: string) => {
+    if (u.role === UserRole.ADMIN) return; // Don't log admin actions for now
+    
+    const newLog: UserActivity = { timestamp: Date.now(), action, details };
+    const updatedUser = { 
+        ...u, 
+        activityLogs: [...(u.activityLogs || []), newLog] 
+    };
+    
+    // Update State
+    setUser(updatedUser);
+    localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+    
+    // Update Database
+    const userKey = `user_${u.username}`;
+    if (localStorage.getItem(userKey)) {
+        localStorage.setItem(userKey, JSON.stringify(updatedUser));
+    }
+  };
+
   const handleLogin = (loggedInUser: User) => {
     setUser(loggedInUser);
     localStorage.setItem('currentUser', JSON.stringify(loggedInUser));
+    logActivity(loggedInUser, 'LOGIN', 'User berhasil login ke sistem.');
   };
 
   const handleLogout = () => {
+    if (user) {
+        logActivity(user, 'LOGOUT', 'User keluar dari sistem.');
+    }
     setUser(null);
     localStorage.removeItem('currentUser');
     setCurrentModule(null);
@@ -38,29 +63,16 @@ const App: React.FC = () => {
   };
 
   const handleCreateOrUpdateModule = async (config: ModuleConfig) => {
-    // If it's a new generation (no content yet OR explicit regeneration requested), call AI.
-    // However, if we are just editing metadata (signatures, names) for an existing module, we might skip AI if content exists.
-    // For simplicity, if we are in "Form" mode, we usually assume regeneration unless we add logic to skip.
-    // Given the flow: "Edit" goes back to form -> Submit generates new content? 
-    // Ideally, if editing data, we might want to keep content. 
-    // Let's check if content exists and if the user wants to regenerate.
-    
-    // For this app version: Submitting the form ALWAYS regenerates the content to ensure it matches the new metadata (like Grade/Subject changes).
-    
     setIsGenerating(true);
     try {
       let content = config.content;
       
-      // If content is empty or we force regeneration (implicit in form submission for now), generate it.
-      // Optimization: If only names/dates changed, we technically don't need to regen AI content, but the prompt uses names.
-      // Let's regenerate to be safe and consistent.
       const newContent = await generateModuleContent(config);
       content = newContent;
       
       const newModule = { ...config, content };
       setCurrentModule(newModule);
       
-      // Update history if ID exists, else add new
       let updatedHistory;
       const existingIndex = history.findIndex(h => h.id === config.id);
       
@@ -74,6 +86,10 @@ const App: React.FC = () => {
       setHistory(updatedHistory);
       localStorage.setItem('moduleHistory', JSON.stringify(updatedHistory));
       
+      if (user) {
+          logActivity(user, 'CREATE_MODULE', `Membuat modul ajar: ${config.subjectName} Kelas ${config.grade}`);
+      }
+
       setView('preview');
     } catch (error) {
       alert("Terjadi kesalahan saat membuat modul. Pastikan API Key valid atau koneksi internet lancar.");
@@ -83,7 +99,6 @@ const App: React.FC = () => {
   };
 
   const handleUpdateModuleFromPreview = (updatedModule: ModuleConfig) => {
-      // This is for updates happening INSIDE preview (like paper size, or just saving state before print)
       setCurrentModule(updatedModule);
       const updatedHistory = history.map(h => h.id === updatedModule.id ? updatedModule : h);
       setHistory(updatedHistory);
@@ -91,7 +106,6 @@ const App: React.FC = () => {
   };
   
   const handleEditFromPreview = () => {
-      // Go back to form with current data
       setView('form');
   };
 
@@ -99,12 +113,19 @@ const App: React.FC = () => {
     return <Auth onLogin={handleLogin} />;
   }
 
+  // --- ADMIN VIEW ---
+  if (user.role === UserRole.ADMIN) {
+      return <AdminDashboard onLogout={handleLogout} />;
+  }
+
+  // --- TEACHER VIEW ---
+
   // Preview Mode
   if (view === 'preview' && currentModule) {
     return (
         <ModulePreview 
             moduleData={currentModule} 
-            onBack={() => setView(user.role === 'ADMIN' ? 'history' : 'form')} 
+            onBack={() => setView('form')} 
             onEdit={handleEditFromPreview}
             onUpdate={handleUpdateModuleFromPreview}
         />
