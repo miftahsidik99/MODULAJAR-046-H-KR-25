@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { User, UserRole, ResetRequest } from '../types';
 import { getProvinces, getRegencies, getDistricts, Region } from '../services/locationService';
 import { findSchoolsWithAI } from '../services/geminiService';
-import { Lock, User as UserIcon, School, ArrowLeft, MapPin, Loader2, CheckCircle, Sparkles, Globe } from 'lucide-react';
+import { Lock, User as UserIcon, School, ArrowLeft, MapPin, Loader2, CheckCircle, Sparkles, Globe, AlertCircle } from 'lucide-react';
 
 interface AuthProps {
   onLogin: (user: User) => void;
@@ -28,6 +28,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [selectedDist, setSelectedDist] = useState('');
   const [isManualSchool, setIsManualSchool] = useState(false);
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
+  const [searchStatus, setSearchStatus] = useState<string>(''); // For UI feedback
 
   useEffect(() => {
     // Load provinces once on mount
@@ -44,6 +45,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
       setDistricts([]);
       setSchoolOptions([]);
       setSchool('');
+      setSearchStatus('');
       if (id) {
           setIsLoadingLocation(true);
           const data = await getRegencies(id);
@@ -59,6 +61,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
       setDistricts([]);
       setSchoolOptions([]);
       setSchool('');
+      setSearchStatus('');
       if (id) {
           setIsLoadingLocation(true);
           const data = await getDistricts(id);
@@ -73,6 +76,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
       setSelectedDist(id);
       setSchoolOptions([]);
       setSchool('');
+      setSearchStatus('');
 
       if (id && district) {
           setIsLoadingLocation(true);
@@ -88,14 +92,13 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
                 setSchoolOptions(schools);
             } else {
                 setSchoolOptions([]);
-                // Optional: Alert user or auto-switch to manual
-                alert("AI tidak dapat menemukan data sekolah spesifik di kecamatan ini. Silakan gunakan fitur 'Input Manual' atau coba lagi.");
-                setIsManualSchool(true);
+                setSearchStatus('not_found');
+                setIsManualSchool(true); // Auto switch to manual but allow user to see why
             }
           } catch (e) {
             console.error(e);
             setSchoolOptions([]);
-            alert("Gagal memuat data sekolah (Periksa API Key). Beralih ke Input Manual.");
+            setSearchStatus('error');
             setIsManualSchool(true);
           } finally {
             setIsLoadingLocation(false);
@@ -300,6 +303,20 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
                             {isManualSchool ? "Cari Otomatis" : "Input Manual"}
                         </button>
                     </div>
+
+                    {/* Status Feedback Area */}
+                    {searchStatus === 'not_found' && !isManualSchool && (
+                        <div className="text-[10px] bg-yellow-50 text-yellow-700 p-2 rounded border border-yellow-200 mb-2 flex items-start gap-1">
+                            <AlertCircle className="w-3 h-3 mt-0.5 shrink-0"/>
+                            <span>Data sekolah tidak ditemukan. Mengalihkan ke input manual.</span>
+                        </div>
+                    )}
+                    {searchStatus === 'error' && !isManualSchool && (
+                        <div className="text-[10px] bg-red-50 text-red-700 p-2 rounded border border-red-200 mb-2 flex items-start gap-1">
+                            <AlertCircle className="w-3 h-3 mt-0.5 shrink-0"/>
+                            <span>Gagal terhubung ke AI (Cek Koneksi/API Key). Gunakan manual.</span>
+                        </div>
+                    )}
 
                     {isManualSchool ? (
                         <input

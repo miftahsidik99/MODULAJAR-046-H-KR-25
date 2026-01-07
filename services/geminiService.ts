@@ -4,7 +4,8 @@ import { ModuleConfig, AIRecommendation } from "../types";
 const getClient = () => {
   const apiKey = process.env.API_KEY;
   if (!apiKey) {
-    throw new Error("API Key not found. Please set REACT_APP_GEMINI_API_KEY or process.env.API_KEY");
+    console.error("API Key is missing. Check Vercel Environment Variables.");
+    throw new Error("API Key not found.");
   }
   return new GoogleGenAI({ apiKey });
 };
@@ -12,23 +13,20 @@ const getClient = () => {
 export const findSchoolsWithAI = async (province: string, regency: string, district: string): Promise<string[]> => {
   const ai = getClient();
   
-  // Prompt diperbarui untuk meminta format JSON secara eksplisit dalam teks
+  // Prompt disederhanakan namun dipertegas untuk format output
   const prompt = `
-    Lakukan pencarian online menggunakan Google Search untuk menemukan daftar nama Sekolah Dasar (SD) dan Madrasah Ibtidaiyah (MI) yang AKTIF dan NYATA di lokasi berikut:
+    Carikan daftar nama sekolah SD dan MI di: 
+    Kecamatan ${district}, ${regency}, ${province}.
     
-    Kecamatan: ${district}
-    Kabupaten/Kota: ${regency}
-    Provinsi: ${province}
-
-    Instruksi Khusus:
-    1. Cari data dari referensi Kemdikbud, Data Pokok Pendidikan (Dapodik), atau Peta Sekolah.
-    2. Prioritaskan penamaan sekolah negeri yang lengkap (Contoh: "SDN [Nama Desa] 01", "SDN [Nama Kecamatan] 05").
-    3. Masukkan juga SD Swasta dan MI yang populer di daerah tersebut.
-    4. Kumpulkan minimal 15-20 nama sekolah jika tersedia.
-    5. OUTPUT HARUS berupa Array JSON String Murni. Jangan gunakan Markdown.
+    Gunakan Google Search untuk data nyata.
     
-    Contoh Output:
-    ["SDN Menteng 01", "SDN Menteng 02", "MIS Al-Falah"]
+    PENTING:
+    1. HANYA berikan output berupa JSON Array of Strings.
+    2. JANGAN gunakan markdown formatting (seperti \`\`\`json).
+    3. JANGAN sertakan angka referensi/sitasi dalam nama sekolah.
+    
+    Contoh Output Benar:
+    ["SDN 1 ${district}", "SDN 2 ${district}", "MIS Al-Falah"]
   `;
 
   try {
@@ -36,32 +34,56 @@ export const findSchoolsWithAI = async (province: string, regency: string, distr
       model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
-        // HAPUS responseMimeType: "application/json" agar tidak konflik dengan tools Google Search
         tools: [{ googleSearch: {} }],
-        thinkingConfig: { thinkingBudget: 0 } // Disable thinking for simple retrieval to save tokens/time
+        thinkingConfig: { thinkingBudget: 0 } 
       }
     });
 
     let text = response.text || '';
     
-    // Parsing Manual yang lebih Robust
-    // Cari kurung siku pembuka '[' pertama dan penutup ']' terakhir
-    const start = text.indexOf('[');
-    const end = text.lastIndexOf(']');
+    // 1. Bersihkan Markdown code blocks (```json ... ```)
+    text = text.replace(/```json|```/g, '');
+    
+    // 2. Bersihkan sitasi Google Search (contoh: [1], [2], [source])
+    text = text.replace(/\[\d+\]/g, '').replace(/\[source\]/g, '');
 
-    if (start !== -1 && end !== -1) {
-        const jsonStr = text.substring(start, end + 1);
-        const schools = JSON.parse(jsonStr);
-        if (Array.isArray(schools)) {
-            return schools.map(String).sort();
+    // 3. Coba Extract JSON Array menggunakan Regex
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    
+    if (jsonMatch) {
+        try {
+            const parsed = JSON.parse(jsonMatch[0]);
+            if (Array.isArray(parsed)) {
+                // Filter hasil agar hanya string dan bersihkan whitespace
+                return parsed
+                    .filter(item => typeof item === 'string')
+                    .map(item => item.trim())
+                    .sort();
+            }
+        } catch (e) {
+            console.warn("JSON Parse failed, attempting fallback parsing...");
         }
     }
+
+    // 4. Fallback: Jika JSON gagal, coba ambil baris per baris (jika AI membandel memberi list)
+    // Mencari baris yang diawali tanda "-" atau angka "1." atau berisi kata "SD/MI"
+    const lines = text.split('\n');
+    const schools: string[] = [];
     
-    console.warn("AI Response did not contain valid JSON array:", text);
+    for (const line of lines) {
+        const cleanLine = line.trim().replace(/^[-*•\d\.]+\s+/, ''); // Hapus bullet/numbering
+        if ((cleanLine.toUpperCase().includes('SD') || cleanLine.toUpperCase().includes('MI')) && cleanLine.length > 5) {
+            schools.push(cleanLine);
+        }
+    }
+
+    if (schools.length > 0) return schools;
+
     return [];
 
   } catch (error) {
     console.error("Error searching schools:", error);
+    // Kembalikan array kosong agar UI bisa handle ke manual input
     return [];
   }
 };
