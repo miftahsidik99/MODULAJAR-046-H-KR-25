@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, UserRole, ResetRequest } from '../types';
-import { Lock, User as UserIcon, School, ArrowLeft } from 'lucide-react';
+import { getProvinces, getRegencies, getDistricts, Region } from '../services/locationService';
+import { findSchoolsWithAI } from '../services/geminiService';
+import { Lock, User as UserIcon, School, ArrowLeft, MapPin, Loader2, CheckCircle, Sparkles, Globe } from 'lucide-react';
 
 interface AuthProps {
   onLogin: (user: User) => void;
@@ -14,6 +16,83 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [school, setSchool] = useState('');
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+
+  // Location States for Registration
+  const [provinces, setProvinces] = useState<Region[]>([]);
+  const [regencies, setRegencies] = useState<Region[]>([]);
+  const [districts, setDistricts] = useState<Region[]>([]);
+  const [schoolOptions, setSchoolOptions] = useState<string[]>([]);
+  
+  const [selectedProv, setSelectedProv] = useState('');
+  const [selectedReg, setSelectedReg] = useState('');
+  const [selectedDist, setSelectedDist] = useState('');
+  const [isManualSchool, setIsManualSchool] = useState(false);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
+
+  useEffect(() => {
+    // Load provinces once on mount
+    getProvinces().then(data => setProvinces(data));
+  }, []);
+
+  // Location Handlers
+  const handleProvChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const id = e.target.value;
+      setSelectedProv(id);
+      setSelectedReg('');
+      setSelectedDist('');
+      setRegencies([]);
+      setDistricts([]);
+      setSchoolOptions([]);
+      setSchool('');
+      if (id) {
+          setIsLoadingLocation(true);
+          const data = await getRegencies(id);
+          setRegencies(data);
+          setIsLoadingLocation(false);
+      }
+  };
+
+  const handleRegChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const id = e.target.value;
+      setSelectedReg(id);
+      setSelectedDist('');
+      setDistricts([]);
+      setSchoolOptions([]);
+      setSchool('');
+      if (id) {
+          setIsLoadingLocation(true);
+          const data = await getDistricts(id);
+          setDistricts(data);
+          setIsLoadingLocation(false);
+      }
+  };
+
+  const handleDistChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const id = e.target.value;
+      const district = districts.find(d => d.id === id);
+      setSelectedDist(id);
+      setSchoolOptions([]);
+      setSchool('');
+
+      if (id && district) {
+          setIsLoadingLocation(true);
+          
+          // Get Names for AI
+          const provinceName = provinces.find(p => p.id === selectedProv)?.name || '';
+          const regencyName = regencies.find(r => r.id === selectedReg)?.name || '';
+          const districtName = district.name;
+
+          try {
+            const schools = await findSchoolsWithAI(provinceName, regencyName, districtName);
+            setSchoolOptions(schools);
+          } catch (e) {
+            console.error(e);
+            setSchoolOptions([]);
+          } finally {
+            setIsLoadingLocation(false);
+          }
+      }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,8 +134,6 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
                  setError("Password salah.");
              }
         } else {
-            // REMOVED DEMO LOGIN FALLBACK
-            // This ensures if 'admin' login fails, it doesn't become a 'guru'
             setError('User tidak ditemukan. Silakan daftar akun baru jika belum punya.');
         }
       } else {
@@ -76,6 +153,10 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
       if (localStorage.getItem(`user_${cleanUsername}`)) {
         setError('Username/NIP sudah terdaftar.');
         return;
+      }
+      if (!school) {
+          setError('Mohon pilih atau isi nama sekolah.');
+          return;
       }
 
       const newUser: User = {
@@ -127,7 +208,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
+      <div className={`bg-white rounded-2xl shadow-xl w-full p-8 transition-all duration-300 ${viewState === 'REGISTER' ? 'max-w-2xl' : 'max-w-md'}`}>
         <div className="text-center mb-8">
           <div className="bg-indigo-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
             <School className="text-white w-8 h-8" />
@@ -144,73 +225,135 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
              </div>
           )}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-                {viewState === 'LOGIN' ? 'Username / NIP' : 'NIP / NUPTK (Username)'}
-            </label>
-            <div className="relative">
-                <UserIcon className="absolute left-3 top-3 text-gray-400 w-5 h-5" />
-                <input
-                    type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    className="pl-10 w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
-                    placeholder={viewState === 'LOGIN' ? "Masuk sebagai admin atau NIP Guru" : "Nomor Induk Pegawai"}
-                    required
-                />
+          {/* Registration Form Layout: 2 Columns */}
+          <div className={viewState === 'REGISTER' ? "grid grid-cols-1 md:grid-cols-2 gap-6" : ""}>
+            
+            <div className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                        {viewState === 'LOGIN' ? 'Username / NIP' : 'NIP / NUPTK (Username)'}
+                    </label>
+                    <div className="relative">
+                        <UserIcon className="absolute left-3 top-3 text-gray-400 w-5 h-5" />
+                        <input
+                            type="text"
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            className="pl-10 w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+                            placeholder={viewState === 'LOGIN' ? "Masuk sebagai admin atau NIP Guru" : "Nomor Induk Pegawai"}
+                            required
+                        />
+                    </div>
+                </div>
+
+                {viewState === 'REGISTER' && (
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Nama Lengkap</label>
+                        <input
+                            type="text"
+                            value={fullName}
+                            onChange={(e) => setFullName(e.target.value)}
+                            className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500"
+                            placeholder="Nama lengkap dengan gelar"
+                            required
+                        />
+                    </div>
+                )}
+
+                {viewState !== 'FORGOT' && (
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                        <div className="relative">
+                            <Lock className="absolute left-3 top-3 text-gray-400 w-5 h-5" />
+                            <input
+                                type="password"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                className="pl-10 w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500"
+                                placeholder="Minimal 6 karakter"
+                                required
+                            />
+                        </div>
+                    </div>
+                )}
             </div>
+
+            {/* Right Column: School Selection (Only in Register) */}
+            {viewState === 'REGISTER' && (
+                <div className="space-y-3 bg-gray-50 p-4 rounded-xl border border-gray-200">
+                    <div className="flex justify-between items-center mb-1">
+                        <label className="block text-sm font-bold text-gray-700">Unit Kerja (Sekolah)</label>
+                        <button 
+                            type="button" 
+                            onClick={() => { setIsManualSchool(!isManualSchool); setSchool(''); }} 
+                            className="text-[10px] text-indigo-600 hover:underline"
+                        >
+                            {isManualSchool ? "Cari Otomatis" : "Input Manual"}
+                        </button>
+                    </div>
+
+                    {isManualSchool ? (
+                        <input
+                            type="text"
+                            value={school}
+                            onChange={(e) => setSchool(e.target.value)}
+                            className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500"
+                            placeholder="Ketik Nama Sekolah..."
+                            required
+                        />
+                    ) : (
+                        <div className="space-y-2">
+                             <div>
+                                <select value={selectedProv} onChange={handleProvChange} className="w-full p-2 border rounded text-xs bg-white focus:ring-1 focus:ring-indigo-500">
+                                    <option value="">-- Pilih Provinsi --</option>
+                                    {provinces.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <select value={selectedReg} onChange={handleRegChange} disabled={!selectedProv} className="w-full p-2 border rounded text-xs bg-white focus:ring-1 focus:ring-indigo-500 disabled:opacity-50">
+                                    <option value="">-- Pilih Kab/Kota --</option>
+                                    {regencies.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <select value={selectedDist} onChange={handleDistChange} disabled={!selectedReg} className="w-full p-2 border rounded text-xs bg-white focus:ring-1 focus:ring-indigo-500 disabled:opacity-50">
+                                    <option value="">-- Pilih Kecamatan --</option>
+                                    {districts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                                </select>
+                            </div>
+                            <div className="relative">
+                                {isLoadingLocation ? (
+                                    <div className="w-full p-2 border rounded bg-indigo-50 text-xs text-indigo-600 flex items-center justify-center animate-pulse gap-2">
+                                        <Globe className="w-3 h-3 animate-spin"/> Mencari sekolah online...
+                                    </div>
+                                ) : (
+                                    <select 
+                                        value={school} 
+                                        onChange={e => setSchool(e.target.value)} 
+                                        disabled={!selectedDist} 
+                                        className="w-full p-2 border rounded text-xs bg-white focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 font-medium text-indigo-700"
+                                    >
+                                        <option value="">-- Pilih SD/MI (Hasil Pencarian) --</option>
+                                        {schoolOptions.map((s, idx) => <option key={idx} value={s}>{s}</option>)}
+                                    </select>
+                                )}
+                            </div>
+                            {selectedDist && (
+                                <p className="text-[10px] text-gray-500">*Data diambil langsung dari Google Search (Real-time).</p>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
+            
           </div>
-
-          {viewState === 'REGISTER' && (
-            <>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nama Lengkap</label>
-                    <input
-                        type="text"
-                        value={fullName}
-                        onChange={(e) => setFullName(e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500"
-                        placeholder="Nama lengkap dengan gelar"
-                        required
-                    />
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Unit Kerja (Sekolah)</label>
-                    <input
-                        type="text"
-                        value={school}
-                        onChange={(e) => setSchool(e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500"
-                        placeholder="Nama Sekolah"
-                        required
-                    />
-                </div>
-            </>
-          )}
-
-          {viewState !== 'FORGOT' && (
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                <div className="relative">
-                    <Lock className="absolute left-3 top-3 text-gray-400 w-5 h-5" />
-                    <input
-                        type="password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="pl-10 w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500"
-                        placeholder="Minimal 6 karakter"
-                        required
-                    />
-                </div>
-            </div>
-          )}
 
           {error && <p className="text-red-500 text-sm text-center bg-red-50 p-2 rounded">{error}</p>}
           {successMsg && <p className="text-green-600 text-sm text-center bg-green-50 p-2 rounded">{successMsg}</p>}
 
           <button
             type="submit"
-            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-lg transition duration-200 flex justify-center items-center gap-2"
+            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-lg transition duration-200 flex justify-center items-center gap-2 mt-4"
           >
             {viewState === 'LOGIN' && 'Masuk'}
             {viewState === 'REGISTER' && 'Daftar Akun Guru'}

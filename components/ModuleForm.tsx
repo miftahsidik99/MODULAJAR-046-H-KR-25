@@ -3,7 +3,7 @@ import { CLASSES, SUBJECTS, LEARNING_MODELS, LEARNING_METHODS, P5_THEMES } from 
 import { ModuleConfig, SubjectType, TeacherProfile } from '../types';
 import { recommendModelAndMethod } from '../services/geminiService';
 import SignatureUpload from './SignatureUpload';
-import { Sparkles, Loader2, BookOpen, UserCircle, Calendar, School, ArrowRight, ArrowLeft, CheckCircle, Brain, Target, Info, PenTool } from 'lucide-react';
+import { Sparkles, Loader2, BookOpen, UserCircle, Calendar, School, ArrowRight, ArrowLeft, CheckCircle, Brain, Target, Info, PenTool, MapPin } from 'lucide-react';
 
 interface Props {
   userProfile: TeacherProfile;
@@ -25,7 +25,11 @@ const ModuleForm: React.FC<Props> = ({ userProfile, initialConfig, onSubmit, isG
   // Identity Fields
   const [teacherName, setTeacherName] = useState(initialConfig?.teacherName || userProfile.name);
   const [teacherNip, setTeacherNip] = useState(initialConfig?.teacherNip || userProfile.nip);
+  
+  // School Info
   const [schoolName, setSchoolName] = useState(initialConfig?.schoolName || userProfile.school);
+  
+  // Principal Info
   const [principalName, setPrincipalName] = useState(initialConfig?.principalName || '');
   const [principalNip, setPrincipalNip] = useState(initialConfig?.principalNip || '');
 
@@ -165,15 +169,27 @@ const ModuleForm: React.FC<Props> = ({ userProfile, initialConfig, onSubmit, isG
                                 </div>
                             </div>
                         </div>
+                         
+                         {/* School Selection - Simplified */}
                          <div className="bg-white p-4 border rounded-xl shadow-sm hover:shadow-md transition">
                              <h4 className="font-semibold text-gray-700 mb-3 border-b pb-2">Informasi Sekolah</h4>
-                              <div>
-                                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Nama Sekolah</label>
-                                <div className="relative">
-                                    <School className="absolute left-3 top-3.5 w-4 h-4 text-gray-400"/>
-                                    <input type="text" value={schoolName} onChange={e => setSchoolName(e.target.value)} className="w-full mt-1 pl-9 p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required />
-                                </div>
-                            </div>
+                              <div className="space-y-3">
+                                  <div>
+                                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Nama Sekolah</label>
+                                        <div className="relative">
+                                            <School className="absolute left-3 top-3.5 w-4 h-4 text-gray-400"/>
+                                            <input 
+                                                type="text" 
+                                                value={schoolName} 
+                                                onChange={e => setSchoolName(e.target.value)} 
+                                                className="w-full mt-1 pl-9 p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50 hover:bg-white transition" 
+                                                placeholder="SD Negeri..." 
+                                                required 
+                                            />
+                                        </div>
+                                        <p className="text-[10px] text-gray-400 mt-1">*Nama sekolah otomatis terisi dari profil Anda.</p>
+                                  </div>
+                              </div>
                          </div>
                     </div>
 

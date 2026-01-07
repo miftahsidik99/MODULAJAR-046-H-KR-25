@@ -9,6 +9,59 @@ const getClient = () => {
   return new GoogleGenAI({ apiKey });
 };
 
+export const findSchoolsWithAI = async (province: string, regency: string, district: string): Promise<string[]> => {
+  const ai = getClient();
+  
+  // Prompt yang diperbarui untuk memaksa pencarian data nyata
+  const prompt = `
+    Lakukan pencarian online menggunakan Google Search untuk menemukan daftar nama Sekolah Dasar (SD) dan Madrasah Ibtidaiyah (MI) yang AKTIF dan NYATA di lokasi berikut:
+    
+    Kecamatan: ${district}
+    Kabupaten/Kota: ${regency}
+    Provinsi: ${province}
+
+    Instruksi Khusus:
+    1. Cari data dari referensi Kemdikbud, Data Pokok Pendidikan (Dapodik), atau Peta Sekolah.
+    2. Prioritaskan penamaan sekolah negeri yang lengkap (Contoh: "SDN [Nama Desa] 01", "SDN [Nama Kecamatan] 05").
+    3. Masukkan juga SD Swasta dan MI yang populer di daerah tersebut.
+    4. Kumpulkan minimal 20-30 nama sekolah jika tersedia.
+    5. HANYA kembalikan data dalam format JSON Array of Strings. Jangan tambahkan teks pengantar atau markdown lain.
+
+    Contoh Output JSON:
+    ["SDN Menteng 01", "SDN Menteng 02", "SDN Gondangdia 01", "MIS Al-Falah", "SD Swasta Kanisius"]
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: prompt,
+      config: {
+        // Mengaktifkan Google Search Grounding untuk akurasi data
+        tools: [{ googleSearch: {} }],
+        responseMimeType: "application/json"
+      }
+    });
+
+    let text = response.text || '[]';
+    
+    // Pembersihan jika ada markdown formatting ```json ... ```
+    text = text.replace(/```json|```/g, '').trim();
+
+    const schools = JSON.parse(text);
+    
+    // Validasi sederhana untuk memastikan array string
+    if (Array.isArray(schools)) {
+        return schools.map(String).sort(); // Urutkan abjad
+    }
+    return [];
+
+  } catch (error) {
+    console.error("Error searching schools:", error);
+    // Fallback manual jika gagal
+    return [];
+  }
+};
+
 export const generateModuleContent = async (config: ModuleConfig): Promise<string> => {
   const ai = getClient();
   
