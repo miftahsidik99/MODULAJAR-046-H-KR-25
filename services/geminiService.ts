@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { ModuleConfig } from "../types";
+import { ModuleConfig, AIRecommendation } from "../types";
 
 const getClient = () => {
   const apiKey = process.env.API_KEY;
@@ -13,44 +13,55 @@ export const generateModuleContent = async (config: ModuleConfig): Promise<strin
   const ai = getClient();
   
   const prompt = `
-    Bertindaklah sebagai Ahli Kurikulum dan Pengembang Perangkat Ajar Profesional.
-    Buatlah **ISI MODUL AJAR (KURIKULUM MERDEKA - EDISI REVISI)** yang sangat rapi, formal, dan siap cetak.
+    Bertindaklah sebagai Ahli Kurikulum dan Pengembang Perangkat Ajar Profesional (Kurikulum Merdeka - Revisi 2025).
+    Buatlah **ISI MODUL AJAR** yang sangat rapi, formal, dan siap cetak.
 
-    **Informasi Dasar:**
+    **Konteks Regulasi:**
+    - Mengacu pada Keputusan Kepala BSKAP No. 032/H/KR/2024 (Capaian Pembelajaran) dan referensi terbaru BSKAP 046/H/KR/2025.
+    - Pendekatan: Deep Learning (Mindful, Meaningful, Joyful).
+
+    **Data Modul:**
     - Mapel: ${config.subjectName}
     - Kelas: ${config.grade}
-    - Topik/Materi: Berdasarkan CP: "${config.cp}"
+    - Topik/Materi (CP): "${config.cp}"
     - Alokasi Waktu: ${config.timeAllocation}
+    - Model Pembelajaran: ${config.model}
+    - Metode: ${config.method}
+    - Profil Pelajar Pancasila: ${config.p5Theme}
+    
+    **Insight AI (Gunakan sebagai panduan alur):**
+    - Analisis Taksonomi TP: ${config.aiTaxonomy || '-'}
+    - Alasan Pemilihan Model: ${config.aiReasoning || '-'}
 
     **Instruksi Format (CRITICAL):**
-    1.  **JANGAN** sertakan Kop Surat / Identitas Guru / Tanda Tangan di output ini (karena sudah ada di layout aplikasi). Mulai langsung dari **A. INFORMASI UMUM**.
-    2.  Gunakan tag HTML standar: <h3> untuk Judul Besar, <h4> untuk Sub-judul, <p> untuk paragraf.
+    1.  **JANGAN** sertakan Kop Surat / Identitas Guru (sudah ada di layout aplikasi). Mulai langsung dari **A. INFORMASI UMUM**.
+    2.  Gunakan tag HTML standar: <h3> untuk Judul Besar, <h4> untuk Sub-judul, <p> untuk paragraf, <ul>/<ol> untuk list.
     3.  **TABEL**: Gunakan tabel HTML (<table style="width:100%; border-collapse:collapse; margin-bottom:1rem;">) untuk bagian "Informasi Umum" dan "Komponen Inti".
     4.  **PEMISAH HALAMAN**: Gunakan tag <div class="page-break"></div> sebelum masuk ke BAGIAN LAMPIRAN.
-    5.  **LKPD**: Gunakan tag <div class="lkpd-box"> untuk membungkus konten LKPD.
+    5.  **LKPD**: Gunakan tag <div class="lkpd-box"> untuk membungkus konten LKPD. Pastikan instruksi LKPD selaras dengan model ${config.model}.
 
     **Struktur Konten:**
 
     **A. INFORMASI UMUM**
-    (Buat dalam satu TABEL border lengkap)
+    (Tabel)
     - Kompetensi Awal
-    - Profil Pelajar Pancasila
+    - Profil Pelajar Pancasila (Fokus pada: ${config.p5Theme})
     - Sarana dan Prasarana
     - Target Peserta Didik
-    - Model Pembelajaran: ${config.model} (Jelaskan singkat)
+    - Model Pembelajaran: ${config.model}
 
     **B. KOMPONEN INTI**
     1.  **Tujuan Pembelajaran**
-        (Sebutkan TP: "${config.tp}" lalu jabarkan menjadi indikator/KKTP).
-    2.  **Pemahaman Bermakna** (Kaitkan dengan Deep Learning)
+        (Sebutkan TP: "${config.tp}" lalu jabarkan menjadi indikator/KKTP yang terukur).
+    2.  **Pemahaman Bermakna** (Deep Learning: Mengapa materi ini penting bagi kehidupan siswa?)
     3.  **Pertanyaan Pemantik**
     4.  **Kegiatan Pembelajaran**
-        (Gunakan TABEL dengan 3 kolom: Tahap, Kegiatan Guru & Peserta Didik, Alokasi Waktu).
-        *   *Pendahuluan*: (Apersepsi, Motivasi)
-        *   *Inti*: (Wajib menampilkan sintaks model **${config.model}** secara eksplisit. Masukkan unsur **Deep Learning** yakni *Mindful* (fokus), *Meaningful* (bermakna), *Joyful* (menyenangkan)).
+        (Gunakan TABEL 3 kolom: Tahap, Kegiatan (Guru & Siswa), Alokasi Waktu).
+        *   *Pendahuluan*: (Apersepsi, Motivasi, Pertanyaan Pemantik).
+        *   *Inti*: (WAJIB menampilkan sintaks model **${config.model}** secara eksplisit langkah demi langkah). Pastikan aktivitas mencerminkan *Deep Learning*.
         *   *Penutup*: (Refleksi, Tindak lanjut).
     5.  **Asesmen**
-        (Sebutkan jenis asesmen: Diagnostik, Formatif, Sumatif).
+        (Diagnostik, Formatif, Sumatif).
     6.  **Pengayaan dan Remedial**
 
     <div class="page-break"></div>
@@ -58,19 +69,17 @@ export const generateModuleContent = async (config: ModuleConfig): Promise<strin
     **C. LAMPIRAN**
 
     1.  **LEMBAR KERJA PESERTA DIDIK (LKPD)**
-        (Buatlah LKPD yang **LENGKAP, DETAIL, dan SIAP CETAK** di dalam <div class="lkpd-box">).
-        *   Buat Header LKPD: Judul Aktivitas, Mata Pelajaran, Kelas, Nama Anggota Kelompok.
-        *   Tujuan Kegiatan.
-        *   Alat dan Bahan.
-        *   **Langkah Kerja**: Instruksi langkah demi langkah yang jelas untuk siswa.
-        *   **Lembar Jawab/Hasil**: Sediakan tabel kosong, bagan, atau garis-garis isian yang cukup besar untuk siswa menulis jawaban mereka langsung di kertas ini.
-        *   **Rubrik Penilaian**: Tabel kriteria penilaian singkat untuk aktivitas ini.
+        (Buatlah LKPD yang siap cetak di dalam <div class="lkpd-box">).
+        - Judul Aktivitas.
+        - Langkah Kerja (Sesuai metode ${config.method}).
+        - Area/Tabel untuk jawaban siswa.
+        - Rubrik Penilaian Singkat.
 
-    2.  **Bahan Bacaan Guru & Peserta Didik** (Ringkasan materi esensial 2-3 paragraf).
-    3.  **Glosarium** (Daftar istilah penting).
+    2.  **Bahan Bacaan Guru & Peserta Didik** (Ringkasan materi 2-3 paragraf).
+    3.  **Glosarium**.
     4.  **Daftar Pustaka**.
 
-    Hasilkan HTML murni yang rapi.
+    Output HTML Only.
   `;
 
   try {
@@ -78,7 +87,7 @@ export const generateModuleContent = async (config: ModuleConfig): Promise<strin
       model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
-        thinkingConfig: { thinkingBudget: 1024 }
+        thinkingConfig: { thinkingBudget: 2048 } // Higher budget for better pedagogical structure
       }
     });
 
@@ -89,16 +98,31 @@ export const generateModuleContent = async (config: ModuleConfig): Promise<strin
   }
 };
 
-export const recommendModelAndMethod = async (grade: number, subject: string, tp: string): Promise<{model: string, method: string}> => {
+export const recommendModelAndMethod = async (grade: number, subject: string, tp: string): Promise<AIRecommendation> => {
    const ai = getClient();
    const prompt = `
-     Berdasarkan Kelas ${grade} SD, Mata Pelajaran ${subject}, dan Tujuan Pembelajaran: "${tp}",
-     Rekomendasikan SATU Model Pembelajaran dan SATU Metode Pembelajaran yang paling cocok dengan pendekatan Deep Learning.
+     Anda adalah Konsultan Kurikulum Merdeka (Ahli Pedagogi).
      
-     Format respon JSON:
+     **Input:**
+     - Kelas: ${grade} SD
+     - Mapel: ${subject}
+     - Tujuan Pembelajaran (TP): "${tp}"
+     - Regulasi: BSKAP 046/H/KR/2025
+
+     **Tugas:**
+     1. Analisis TP tersebut menggunakan Taksonomi Bloom/Anderson (Level Kognitif C1-C6).
+     2. Rekomendasikan 1 Model Pembelajaran Terbaik yang cocok untuk TP tersebut (PjBL/PBL/Discovery/Inquiry/dll).
+     3. Rekomendasikan 1 Metode Pembelajaran pendukung.
+     4. Rekomendasikan 1 Tema P5 yang paling relevan.
+     5. Berikan ALASAN (Reasoning) yang pedagogis dan logis mengapa kombinasi tersebut dipilih.
+
+     **Format Respon JSON:**
      {
-       "model": "Nama Model",
-       "method": "Nama Metode"
+       "model": "Nama Model (Contoh: Problem-Based Learning)",
+       "method": "Nama Metode (Contoh: Diskusi Kelompok)",
+       "p5Theme": "Nama Tema P5 (Contoh: Gaya Hidup Berkelanjutan)",
+       "reasoning": "Penjelasan singkat (maks 2 kalimat) mengapa model ini paling tepat untuk mencapai TP tersebut.",
+       "taxonomyAnalysis": "Analisis Level Kognitif (Contoh: TP ini berada di level C4 (Menganalisis) karena siswa diminta untuk...)"
      }
    `;
 
@@ -110,8 +134,17 @@ export const recommendModelAndMethod = async (grade: number, subject: string, tp
             responseMimeType: "application/json"
         }
      });
-     return JSON.parse(response.text || '{}');
+     
+     const text = response.text || '{}';
+     return JSON.parse(text);
    } catch (e) {
-     return { model: 'Problem-Based Learning (PBL)', method: 'Diskusi Kelompok' }; // Fallback
+     console.error("AI Recommendation Error", e);
+     return { 
+        model: 'Problem-Based Learning (PBL)', 
+        method: 'Diskusi Kelompok',
+        p5Theme: 'Bangunlah Jiwa dan Raganya',
+        reasoning: 'Gagal menghubungi AI. Menggunakan rekomendasi default.',
+        taxonomyAnalysis: 'Tidak dapat dianalisis.'
+     }; 
    }
 };

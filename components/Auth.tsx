@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { User, UserRole, ResetRequest } from '../types';
-import { Lock, User as UserIcon, School, HelpCircle, ArrowLeft } from 'lucide-react';
+import { Lock, User as UserIcon, School, ArrowLeft } from 'lucide-react';
 
 interface AuthProps {
   onLogin: (user: User) => void;
@@ -20,68 +20,86 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
     setError('');
     setSuccessMsg('');
 
+    // Normalize username to prevent case sensitivity issues
+    const cleanUsername = username.trim();
+    const cleanUsernameLower = cleanUsername.toLowerCase();
+
     if (viewState === 'LOGIN') {
-      if (username === 'admin' && password === 'admin') {
-        onLogin({ username: 'admin', role: UserRole.ADMIN, name: 'Administrator', activityLogs: [] });
-      } else if (username && password.length >= 6) {
-        const storedUser = localStorage.getItem(`user_${username}`);
-        if (storedUser) {
-             const userData = JSON.parse(storedUser);
+      // 1. Check Hardcoded Admin
+      if (cleanUsernameLower === 'admin' && password === 'admin') {
+        onLogin({ 
+            username: 'admin', 
+            role: UserRole.ADMIN, 
+            name: 'Administrator', 
+            activityLogs: [] 
+        });
+        return;
+      } 
+      
+      // 2. Check Existing User in LocalStorage
+      if (cleanUsername && password.length >= 6) {
+        const storedUser = localStorage.getItem(`user_${cleanUsername}`); // Check exact case first
+        const storedUserLower = localStorage.getItem(`user_${cleanUsernameLower}`); // Check lowercase key
+        
+        const userDataRaw = storedUser || storedUserLower;
+
+        if (userDataRaw) {
+             const userData = JSON.parse(userDataRaw);
              if (userData.password === password) {
                  // Update last login
                  const updatedUser = { ...userData, lastLogin: Date.now() };
-                 localStorage.setItem(`user_${username}`, JSON.stringify(updatedUser));
+                 // Save back to the correct key
+                 localStorage.setItem(storedUser ? `user_${cleanUsername}` : `user_${cleanUsernameLower}`, JSON.stringify(updatedUser));
                  onLogin(updatedUser);
              } else {
                  setError("Password salah.");
              }
         } else {
-            // Demo Login
-            onLogin({ 
-                username, 
-                role: UserRole.GURU, 
-                name: 'Guru Demo', 
-                nip: username,
-                school: 'SDN 01 Merdeka',
-                password: password,
-                activityLogs: []
-            });
+            // REMOVED DEMO LOGIN FALLBACK
+            // This ensures if 'admin' login fails, it doesn't become a 'guru'
+            setError('User tidak ditemukan. Silakan daftar akun baru jika belum punya.');
         }
       } else {
-        setError('Username atau password salah.');
+        setError('Username atau password tidak valid.');
       }
+
     } else if (viewState === 'REGISTER') {
+      if (cleanUsernameLower === 'admin') {
+          setError('Username "admin" tidak boleh digunakan untuk pendaftaran umum.');
+          return;
+      }
       if (password.length < 6) {
         setError('Password minimal 6 karakter.');
         return;
       }
       // Check if user exists
-      if (localStorage.getItem(`user_${username}`)) {
+      if (localStorage.getItem(`user_${cleanUsername}`)) {
         setError('Username/NIP sudah terdaftar.');
         return;
       }
 
       const newUser: User = {
-        username,
+        username: cleanUsername,
         role: UserRole.GURU,
         name: fullName,
-        nip: username,
+        nip: cleanUsername,
         school,
         password,
         activityLogs: [],
         lastLogin: Date.now()
       };
-      localStorage.setItem(`user_${username}`, JSON.stringify(newUser));
+      localStorage.setItem(`user_${cleanUsername}`, JSON.stringify(newUser));
       onLogin(newUser);
+
     } else if (viewState === 'FORGOT') {
       // Check if user exists
-      const storedUserRaw = localStorage.getItem(`user_${username}`);
-      if (!storedUserRaw) {
+      const userDataRaw = localStorage.getItem(`user_${cleanUsername}`);
+      if (!userDataRaw) {
         setError('Username/NIP tidak ditemukan.');
         return;
       }
       
-      const userData = JSON.parse(storedUserRaw);
+      const userData = JSON.parse(userDataRaw);
       
       const newRequest: ResetRequest = {
         id: Date.now().toString(),
@@ -95,7 +113,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
       // Save to admin requests list
       const existingRequests = JSON.parse(localStorage.getItem('admin_reset_requests') || '[]');
       // Avoid duplicate pending requests
-      const isAlreadyPending = existingRequests.some((r: ResetRequest) => r.username === username && r.status === 'PENDING');
+      const isAlreadyPending = existingRequests.some((r: ResetRequest) => r.username === cleanUsername && r.status === 'PENDING');
       
       if (isAlreadyPending) {
          setError('Permintaan reset password Anda sudah dikirim dan sedang menunggu persetujuan Admin.');
@@ -137,7 +155,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     className="pl-10 w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
-                    placeholder={viewState === 'LOGIN' ? "admin atau NIP" : "Nomor Induk Pegawai"}
+                    placeholder={viewState === 'LOGIN' ? "Masuk sebagai admin atau NIP Guru" : "Nomor Induk Pegawai"}
                     required
                 />
             </div>

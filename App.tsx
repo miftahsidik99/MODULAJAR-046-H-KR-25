@@ -5,7 +5,7 @@ import ModuleForm from './components/ModuleForm';
 import ModulePreview from './components/ModulePreview';
 import AdminDashboard from './components/AdminDashboard';
 import { generateModuleContent } from './services/geminiService';
-import { FileText, LogOut, History, PlusCircle } from 'lucide-react';
+import { FileText, LogOut, History, PlusCircle, Lock, Save } from 'lucide-react';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -14,20 +14,41 @@ const App: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [view, setView] = useState<'form' | 'preview' | 'history'>('form');
 
+  // Change Password State
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+
   useEffect(() => {
     const savedUser = localStorage.getItem('currentUser');
     if (savedUser) {
-      setUser(JSON.parse(savedUser));
+      try {
+        const parsedUser = JSON.parse(savedUser);
+        
+        // --- CRITICAL FIX: Validate Session ---
+        // If username is 'admin' but role is NOT 'ADMIN', it's a corrupted/old session.
+        // Force logout to allow proper admin login.
+        if (parsedUser.username === 'admin' && parsedUser.role !== UserRole.ADMIN) {
+            console.warn("Corrupted admin session detected. Forcing logout.");
+            localStorage.removeItem('currentUser');
+            setUser(null);
+        } else {
+            setUser(parsedUser);
+        }
+      } catch (e) {
+        localStorage.removeItem('currentUser');
+      }
     }
     const savedHistory = localStorage.getItem('moduleHistory');
     if (savedHistory) {
-        setHistory(JSON.parse(savedHistory));
+        try {
+            setHistory(JSON.parse(savedHistory));
+        } catch(e) { /* ignore */ }
     }
   }, []);
 
   // Helper to save log
   const logActivity = (u: User, action: string, details: string) => {
-    if (u.role === UserRole.ADMIN) return; // Don't log admin actions for now
+    if (u.role === UserRole.ADMIN) return; // Don't log admin actions
     
     const newLog: UserActivity = { timestamp: Date.now(), action, details };
     const updatedUser = { 
@@ -35,31 +56,74 @@ const App: React.FC = () => {
         activityLogs: [...(u.activityLogs || []), newLog] 
     };
     
-    // Update State
-    setUser(updatedUser);
-    localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+    // Update State (if it matches current user)
+    if (user && user.username === u.username) {
+         setUser(updatedUser);
+         localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+    }
     
     // Update Database
     const userKey = `user_${u.username}`;
     if (localStorage.getItem(userKey)) {
-        localStorage.setItem(userKey, JSON.stringify(updatedUser));
+        const dbUser = JSON.parse(localStorage.getItem(userKey) || '{}');
+        const mergedUser = { ...dbUser, activityLogs: updatedUser.activityLogs };
+        localStorage.setItem(userKey, JSON.stringify(mergedUser));
     }
   };
 
   const handleLogin = (loggedInUser: User) => {
     setUser(loggedInUser);
     localStorage.setItem('currentUser', JSON.stringify(loggedInUser));
-    logActivity(loggedInUser, 'LOGIN', 'User berhasil login ke sistem.');
+    // Only log activity for non-admins
+    if (loggedInUser.role !== UserRole.ADMIN) {
+        logActivity(loggedInUser, 'LOGIN', 'User berhasil login ke sistem.');
+    }
   };
 
   const handleLogout = () => {
-    if (user) {
+    if (user && user.role !== UserRole.ADMIN) {
         logActivity(user, 'LOGOUT', 'User keluar dari sistem.');
     }
     setUser(null);
     localStorage.removeItem('currentUser');
     setCurrentModule(null);
     setView('form');
+    setNewPassword('');
+    setConfirmPassword('');
+  };
+
+  const handleChangePassword = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (newPassword.length < 6) {
+          alert("Password minimal 6 karakter.");
+          return;
+      }
+      if (newPassword !== confirmPassword) {
+          alert("Konfirmasi password tidak cocok.");
+          return;
+      }
+
+      if (user) {
+          const updatedUser: User = { 
+              ...user, 
+              password: newPassword, 
+              mustChangePassword: false // Clear the flag
+          };
+          
+          setUser(updatedUser);
+          localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+          
+          // Update DB
+          const userKey = `user_${user.username}`;
+          if (localStorage.getItem(userKey)) {
+              const dbUser = JSON.parse(localStorage.getItem(userKey) || '{}');
+              const mergedUser = { ...dbUser, ...updatedUser };
+              localStorage.setItem(userKey, JSON.stringify(mergedUser));
+          }
+          
+          logActivity(updatedUser, 'CHANGE_PASSWORD', 'User berhasil mengubah password.');
+          alert("Password berhasil diubah. Silakan lanjutkan.");
+      }
   };
 
   const handleCreateOrUpdateModule = async (config: ModuleConfig) => {
@@ -113,9 +177,54 @@ const App: React.FC = () => {
     return <Auth onLogin={handleLogin} />;
   }
 
-  // --- ADMIN VIEW ---
+  // --- ADMIN VIEW (ROBUST CHECK) ---
+  // Check against Enum and string literal to ensure it catches the role correctly
   if (user.role === UserRole.ADMIN) {
       return <AdminDashboard onLogout={handleLogout} />;
+  }
+
+  // --- FORCE CHANGE PASSWORD ---
+  if (user.mustChangePassword) {
+      return (
+          <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 font-sans">
+              <div className="bg-white p-8 rounded-xl shadow-lg max-w-md w-full">
+                  <div className="text-center mb-6">
+                      <div className="bg-orange-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                          <Lock className="w-8 h-8 text-orange-600" />
+                      </div>
+                      <h2 className="text-2xl font-bold text-gray-800">Ganti Password</h2>
+                      <p className="text-gray-600 mt-2 text-sm">Admin telah mereset password Anda. Demi keamanan, silakan buat password baru.</p>
+                  </div>
+                  <form onSubmit={handleChangePassword} className="space-y-4">
+                      <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Password Baru</label>
+                          <input 
+                              type="password" 
+                              value={newPassword}
+                              onChange={e => setNewPassword(e.target.value)}
+                              className="w-full border p-2 rounded focus:ring-2 focus:ring-orange-500"
+                              required
+                              placeholder="Minimal 6 karakter"
+                          />
+                      </div>
+                      <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Konfirmasi Password</label>
+                          <input 
+                              type="password" 
+                              value={confirmPassword}
+                              onChange={e => setConfirmPassword(e.target.value)}
+                              className="w-full border p-2 rounded focus:ring-2 focus:ring-orange-500"
+                              required
+                              placeholder="Ulangi password baru"
+                          />
+                      </div>
+                      <button type="submit" className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-2 rounded flex items-center justify-center gap-2">
+                          <Save className="w-4 h-4" /> Simpan Password Baru
+                      </button>
+                  </form>
+              </div>
+          </div>
+      );
   }
 
   // --- TEACHER VIEW ---
