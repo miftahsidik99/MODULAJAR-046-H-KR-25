@@ -12,7 +12,7 @@ const getClient = () => {
 export const findSchoolsWithAI = async (province: string, regency: string, district: string): Promise<string[]> => {
   const ai = getClient();
   
-  // Prompt yang diperbarui untuk memaksa pencarian data nyata
+  // Prompt diperbarui untuk meminta format JSON secara eksplisit dalam teks
   const prompt = `
     Lakukan pencarian online menggunakan Google Search untuk menemukan daftar nama Sekolah Dasar (SD) dan Madrasah Ibtidaiyah (MI) yang AKTIF dan NYATA di lokasi berikut:
     
@@ -24,11 +24,11 @@ export const findSchoolsWithAI = async (province: string, regency: string, distr
     1. Cari data dari referensi Kemdikbud, Data Pokok Pendidikan (Dapodik), atau Peta Sekolah.
     2. Prioritaskan penamaan sekolah negeri yang lengkap (Contoh: "SDN [Nama Desa] 01", "SDN [Nama Kecamatan] 05").
     3. Masukkan juga SD Swasta dan MI yang populer di daerah tersebut.
-    4. Kumpulkan minimal 20-30 nama sekolah jika tersedia.
-    5. HANYA kembalikan data dalam format JSON Array of Strings. Jangan tambahkan teks pengantar atau markdown lain.
-
-    Contoh Output JSON:
-    ["SDN Menteng 01", "SDN Menteng 02", "SDN Gondangdia 01", "MIS Al-Falah", "SD Swasta Kanisius"]
+    4. Kumpulkan minimal 15-20 nama sekolah jika tersedia.
+    5. OUTPUT HARUS berupa Array JSON String Murni. Jangan gunakan Markdown.
+    
+    Contoh Output:
+    ["SDN Menteng 01", "SDN Menteng 02", "MIS Al-Falah"]
   `;
 
   try {
@@ -36,28 +36,32 @@ export const findSchoolsWithAI = async (province: string, regency: string, distr
       model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
-        // Mengaktifkan Google Search Grounding untuk akurasi data
+        // HAPUS responseMimeType: "application/json" agar tidak konflik dengan tools Google Search
         tools: [{ googleSearch: {} }],
-        responseMimeType: "application/json"
+        thinkingConfig: { thinkingBudget: 0 } // Disable thinking for simple retrieval to save tokens/time
       }
     });
 
-    let text = response.text || '[]';
+    let text = response.text || '';
     
-    // Pembersihan jika ada markdown formatting ```json ... ```
-    text = text.replace(/```json|```/g, '').trim();
+    // Parsing Manual yang lebih Robust
+    // Cari kurung siku pembuka '[' pertama dan penutup ']' terakhir
+    const start = text.indexOf('[');
+    const end = text.lastIndexOf(']');
 
-    const schools = JSON.parse(text);
-    
-    // Validasi sederhana untuk memastikan array string
-    if (Array.isArray(schools)) {
-        return schools.map(String).sort(); // Urutkan abjad
+    if (start !== -1 && end !== -1) {
+        const jsonStr = text.substring(start, end + 1);
+        const schools = JSON.parse(jsonStr);
+        if (Array.isArray(schools)) {
+            return schools.map(String).sort();
+        }
     }
+    
+    console.warn("AI Response did not contain valid JSON array:", text);
     return [];
 
   } catch (error) {
     console.error("Error searching schools:", error);
-    // Fallback manual jika gagal
     return [];
   }
 };

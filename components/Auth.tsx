@@ -84,10 +84,19 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
 
           try {
             const schools = await findSchoolsWithAI(provinceName, regencyName, districtName);
-            setSchoolOptions(schools);
+            if (schools.length > 0) {
+                setSchoolOptions(schools);
+            } else {
+                setSchoolOptions([]);
+                // Optional: Alert user or auto-switch to manual
+                alert("AI tidak dapat menemukan data sekolah spesifik di kecamatan ini. Silakan gunakan fitur 'Input Manual' atau coba lagi.");
+                setIsManualSchool(true);
+            }
           } catch (e) {
             console.error(e);
             setSchoolOptions([]);
+            alert("Gagal memuat data sekolah (Periksa API Key). Beralih ke Input Manual.");
+            setIsManualSchool(true);
           } finally {
             setIsLoadingLocation(false);
           }
