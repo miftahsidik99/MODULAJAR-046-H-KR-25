@@ -16,23 +16,32 @@ export const findSchoolsWithAI = async (province: string, regency: string, distr
   try {
     const ai = getClient();
     
-    // Prompt yang disederhanakan agar AI lebih mudah mengerti
+    // UPDATE: Prompt dibuat lebih komprehensif untuk menangkap seluruh data sekolah
     const prompt = `
-      Cari nama-nama Sekolah Dasar (SD) dan Madrasah Ibtidaiyah (MI) di:
+      Temukan daftar LENGKAP seluruh Sekolah Dasar (SD) dan Madrasah Ibtidaiyah (MI) yang ada di:
       Kecamatan ${district}, ${regency}, ${province}.
       
-      Gunakan Google Search.
-      HANYA tuliskan daftar nama sekolahnya saja.
-      Jangan pakai nomor.
+      Tugas:
+      1. Gunakan Google Search untuk menelusuri database sekolah (seperti Data Pokok Pendidikan/Dapodik, referensi Kemdikbud, atau direktori sekolah).
+      2. Daftarkan SEMUA sekolah yang valid di kecamatan tersebut, meliputi:
+         - SD Negeri (contoh: SDN 1 ..., SDN Inpres ...)
+         - SD Swasta (contoh: SDS ..., SD Islam Terpadu ...)
+         - Madrasah Ibtidaiyah Negeri & Swasta (MIN ..., MIS ...)
+      3. Jangan batasi jumlah hasil. Tuliskan sebanyak mungkin yang ditemukan.
       
-      Contoh output yang diharapkan:
+      Format Output:
+      - HANYA tuliskan nama sekolah.
+      - Satu nama sekolah per baris.
+      - Jangan gunakan nomor urut atau simbol bullet.
+      
+      Contoh Output yang Benar:
       SDN 1 ${district}
       SDN 2 ${district}
-      MIS Al Hidayah
-      SD Swasta Pertiwi
+      SD Islam Terpadu Bina Insani
+      MIS Al Falah
+      UPT SDN ${district}
     `;
 
-    // Menggunakan model 2.5 flash yang lebih stabil untuk grounding search saat ini
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash', 
       contents: prompt,
@@ -43,44 +52,48 @@ export const findSchoolsWithAI = async (province: string, regency: string, distr
 
     const text = response.text || '';
     
-    // Parsing Logic: Sangat longgar untuk memastikan ada hasil
+    // UPDATE: Parsing Logic yang lebih baik
     const schools = text.split('\n')
       .map(line => {
-        // Bersihkan karakter aneh di awal
+        // Bersihkan bullet points, nomor, dan spasi di awal
         let clean = line.replace(/^[\d\.\-\*\•\s]+/, '').trim();
-        // Hapus sitasi
+        // Hapus sitasi referensi [1], [source]
         clean = clean.replace(/\[.*?\]/g, '');
-        // Hapus markdown
+        // Hapus formatting markdown
         clean = clean.replace(/[*_]/g, '');
         return clean;
       })
       .filter(line => {
         const upper = line.toUpperCase();
         
-        // Filter Dasar: Minimal ada kata SD/MI/SEKOLAH dan panjang > 3
+        // Filter Kata Kunci: Memastikan yang masuk adalah sekolah
         const isSchool = 
             upper.includes('SD') || 
             upper.includes('MI') || 
             upper.includes('SEKOLAH') || 
-            upper.includes('UPT'); 
+            upper.includes('MADRASAH') ||
+            upper.includes('UPT') || 
+            upper.includes('YAYASAN');
             
-        // Buang kalimat percakapan
+        // Filter Sampah: Membuang kalimat percakapan AI
         const isJunk = 
             upper.includes('BERIKUT') || 
             upper.includes('DAFTAR') || 
             upper.includes('MAAF') ||
-            upper.includes('SAYA TIDAK MENEMUKAN');
+            upper.includes('SAYA TIDAK') || 
+            upper.includes('MENCARI') ||
+            upper.length < 5; // Nama sekolah biasanya lebih dari 5 huruf
 
-        return line.length >= 4 && isSchool && !isJunk;
+        return isSchool && !isJunk;
       })
-      .filter((value, index, self) => self.indexOf(value) === index) // Unik
-      .slice(0, 15); // Batasi 15 sekolah saja biar rapi
+      .filter((value, index, self) => self.indexOf(value) === index) // Hapus duplikat
+      .sort(); // Urutkan sesuai abjad A-Z untuk memudahkan pencarian
 
+    // UPDATE: Limit .slice(0, 15) DIHAPUS agar semua data tampil
     return schools;
 
   } catch (error) {
     console.error("Error searching schools:", error);
-    // Jangan throw error agar UI tidak crash, biarkan return kosong agar fallback ke manual input
     return [];
   }
 };
