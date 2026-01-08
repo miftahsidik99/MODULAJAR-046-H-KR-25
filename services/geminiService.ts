@@ -2,39 +2,33 @@ import { GoogleGenAI } from "@google/genai";
 import { ModuleConfig, AIRecommendation } from "../types";
 
 const getClient = () => {
-  // Support both injected process.env (from vite.config) and native Vite env vars
-  const apiKey = process.env.API_KEY;
-  
-  if (!apiKey) {
-    console.error("CRITICAL: API Key is missing.");
-    throw new Error("API Key configuration missing. Please check Vercel Environment Variables.");
-  }
-  return new GoogleGenAI({ apiKey });
+  // Use process.env.API_KEY as mandated by @google/genai coding guidelines.
+  // Assumes the environment is correctly configured with the API key.
+  return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
 export const findSchoolsWithAI = async (province: string, regency: string, district: string): Promise<string[]> => {
-  const ai = getClient();
-  
-  // Prompt diperbarui: Meminta format List (bullet points) sebagai alternatif JSON
-  // Ini lebih mudah dipahami model saat menggunakan Tools
-  const prompt = `
-    Tugas: Cari nama-nama Sekolah Dasar (SD) dan Madrasah Ibtidaiyah (MI) nyata di lokasi ini:
-    Kecamatan ${district}, ${regency}, ${province}.
-    
-    Gunakan Google Search.
-    
-    Berikan output HANYA berupa daftar nama sekolah yang dipisahkan baris baru.
-    Jangan gunakan penomoran, bullet points, atau tanda kutip/kurung siku JSON.
-    Bersihkan nama sekolah dari referensi angka (misal [1]).
-
-    Contoh Output yang Diharapkan:
-    SDN 1 ${district}
-    SDN 2 ${district}
-    MIS Al Hidayah
-    SD Swasta Harapan
-  `;
-
   try {
+    const ai = getClient();
+    
+    const prompt = `
+      Tugas: Cari daftar nama Sekolah Dasar (SD) dan Madrasah Ibtidaiyah (MI) yang ada di kecamatan ini:
+      Kecamatan ${district}, ${regency}, ${province}.
+      
+      Gunakan Google Search untuk mencari data nyata terbaru.
+      
+      Instruksi Output:
+      1. HANYA berikan daftar nama sekolah.
+      2. Satu sekolah per baris.
+      3. Jangan gunakan nomor, bullet points, atau tanda baca json.
+      4. Jangan berikan kalimat pengantar.
+
+      Contoh Output Benar:
+      SDN 1 ${district}
+      SDN 2 ${district}
+      MIS Al Falah
+    `;
+
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,
@@ -44,48 +38,35 @@ export const findSchoolsWithAI = async (province: string, regency: string, distr
       }
     });
 
-    let text = response.text || '';
+    const text = response.text || '';
     
-    // Cleaning: Hapus markdown code blocks jika AI bandel
-    text = text.replace(/```json|```/g, '').replace(/```/g, '');
-    // Cleaning: Hapus referensi sitasi [1], [source], dll
-    text = text.replace(/\[.*?\]/g, '');
+    // Parsing yang sangat agresif untuk membersihkan sampah karakter dari AI
+    const schools = text.split('\n')
+      .map(line => {
+        // Hapus markdown, angka di depan, sitasi [1], dan spasi
+        return line.replace(/^[*•\-\d\.]+\s*/, '') // Hapus bullet/angka
+                   .replace(/\[.*?\]/g, '')         // Hapus sitasi [1]
+                   .replace(/\*\*/g, '')            // Hapus bold markdown
+                   .trim();
+      })
+      .filter(line => {
+        const upper = line.toUpperCase();
+        // Validasi: Harus ada kata SD, MI, atau SEKOLAH, dan panjang > 5 karakter
+        return line.length > 5 && (upper.includes('SD') || upper.includes('MI') || upper.includes('SEKOLAH'));
+      })
+      .filter((value, index, self) => self.indexOf(value) === index) // Hapus duplikat
+      .sort();
 
-    // Parsing Strategy: Split by Newline
-    // Ini jauh lebih stabil daripada memaksakan JSON parse pada hasil search
-    const lines = text.split('\n');
-    const schools: string[] = [];
-
-    for (const line of lines) {
-        // Bersihkan whitespace dan karakter non-huruf di awal (bullet/angka)
-        const cleanLine = line.trim().replace(/^[-*•\d\.]+\s+/, '');
-        
-        // Filter validasi sederhana: Minimal 5 huruf dan mengandung kata kunci sekolah
-        const upper = cleanLine.toUpperCase();
-        if (cleanLine.length > 5 && (upper.includes('SD') || upper.includes('MI') || upper.includes('SEKOLAH'))) {
-            // Hindari duplikasi
-            if (!schools.includes(cleanLine)) {
-                schools.push(cleanLine);
-            }
-        }
-    }
-    
-    // Jika strategi newline gagal, coba strategi JSON (fallback)
     if (schools.length === 0) {
-        const jsonMatch = text.match(/\[[\s\S]*\]/);
-        if (jsonMatch) {
-            try {
-                const parsed = JSON.parse(jsonMatch[0]);
-                if (Array.isArray(parsed)) return parsed.map(String).sort();
-            } catch (e) { /* ignore */ }
-        }
+        console.warn("AI returned empty list. Raw text:", text);
     }
 
-    return schools.sort();
+    return schools;
 
   } catch (error) {
     console.error("Error searching schools:", error);
-    return [];
+    // Lempar error agar UI tahu ini gagal koneksi/api, bukan sekadar tidak ada hasil
+    throw error;
   }
 };
 
@@ -167,7 +148,7 @@ export const generateModuleContent = async (config: ModuleConfig): Promise<strin
       model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
-        thinkingConfig: { thinkingBudget: 2048 } // Higher budget for better pedagogical structure
+        thinkingConfig: { thinkingBudget: 2048 }
       }
     });
 

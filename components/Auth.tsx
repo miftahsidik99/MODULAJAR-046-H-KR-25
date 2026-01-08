@@ -99,7 +99,8 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
             console.error(e);
             setSchoolOptions([]);
             // Detect missing key specific error
-            if (e.message && (e.message.includes("API Key") || e.message.includes("configuration missing"))) {
+            const errMsg = e?.message || '';
+            if (errMsg.includes("API Key") || errMsg.includes("VITE_GEMINI_API_KEY")) {
                 setSearchStatus('missing_key');
             } else {
                 setSearchStatus('error');
@@ -319,7 +320,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
                     {searchStatus === 'missing_key' && !isManualSchool && (
                         <div className="text-[10px] bg-red-50 text-red-700 p-2 rounded border border-red-200 mb-2 flex items-start gap-1">
                             <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0"/>
-                            <span>API Key tidak terdeteksi! Mohon set `VITE_GEMINI_API_KEY` di Dashboard Vercel.</span>
+                            <span>API Key Hilang! Tambahkan <b>VITE_GEMINI_API_KEY</b> di Vercel Settings.</span>
                         </div>
                     )}
                     {searchStatus === 'error' && !isManualSchool && (
