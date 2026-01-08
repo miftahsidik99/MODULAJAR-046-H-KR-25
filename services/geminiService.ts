@@ -16,83 +16,72 @@ export const findSchoolsWithAI = async (province: string, regency: string, distr
   try {
     const ai = getClient();
     
-    // Prompt diperbaiki agar lebih fleksibel tapi tetap terstruktur
+    // Prompt yang disederhanakan agar AI lebih mudah mengerti
     const prompt = `
-      Cari daftar nama Sekolah Dasar (SD) dan Madrasah Ibtidaiyah (MI) di kecamatan berikut:
+      Cari nama-nama Sekolah Dasar (SD) dan Madrasah Ibtidaiyah (MI) di:
       Kecamatan ${district}, ${regency}, ${province}.
       
-      Gunakan Google Search untuk mencari data sekolah yang nyata (Negeri maupun Swasta).
+      Gunakan Google Search.
+      HANYA tuliskan daftar nama sekolahnya saja.
+      Jangan pakai nomor.
       
-      Instruksi Output:
-      - Berikan HANYA daftar nama sekolah.
-      - Pisahkan setiap nama sekolah dengan baris baru (Enter).
-      - Jangan gunakan nomor urut (1., 2.) atau bullet points.
-      - Jangan berikan kalimat pembuka seperti "Berikut adalah daftar...".
-      - Sertakan sekolah dengan nama awalan seperti "SDN", "SDS", "SD", "MI", "MIS", "UPT", "UPTD".
-
-      Contoh Format:
+      Contoh output yang diharapkan:
       SDN 1 ${district}
-      SD Swasta Harapan
-      MIS Al-Falah
-      UPT SDN 2 ${district}
+      SDN 2 ${district}
+      MIS Al Hidayah
+      SD Swasta Pertiwi
     `;
 
+    // Menggunakan model 2.5 flash yang lebih stabil untuk grounding search saat ini
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-2.5-flash', 
       contents: prompt,
       config: {
         tools: [{ googleSearch: {} }],
-        // Menghapus thinkingConfig: { thinkingBudget: 0 } agar model lebih leluasa menggunakan Search
       }
     });
 
     const text = response.text || '';
     
-    // Parsing Logic: Lebih longgar untuk menangkap variasi nama sekolah
+    // Parsing Logic: Sangat longgar untuk memastikan ada hasil
     const schools = text.split('\n')
       .map(line => {
-        // Bersihkan karakter non-huruf di awal (nomor, bullet, spasi)
+        // Bersihkan karakter aneh di awal
         let clean = line.replace(/^[\d\.\-\*\•\s]+/, '').trim();
-        // Hapus sitasi [1], [2]
+        // Hapus sitasi
         clean = clean.replace(/\[.*?\]/g, '');
-        // Hapus markdown bold/italic
+        // Hapus markdown
         clean = clean.replace(/[*_]/g, '');
         return clean;
       })
       .filter(line => {
         const upper = line.toUpperCase();
         
-        // Filter Validasi Sekolah:
-        // 1. Minimal 4 huruf (misal "SD 1" itu 4 huruf)
-        // 2. Harus mengandung salah satu kata kunci sekolah
-        const hasSchoolKeyword = 
+        // Filter Dasar: Minimal ada kata SD/MI/SEKOLAH dan panjang > 3
+        const isSchool = 
             upper.includes('SD') || 
             upper.includes('MI') || 
             upper.includes('SEKOLAH') || 
-            upper.includes('MADRASAH') ||
-            upper.includes('UPT'); // Unit Pelaksana Teknis sering dipakai di nama SD Negeri
+            upper.includes('UPT'); 
             
-        // 3. Bukan kalimat sampah/pengantar
-        const isNotJunk = 
-            !upper.includes('BERIKUT') && 
-            !upper.includes('DAFTAR') && 
-            !upper.includes('MENCARI') &&
-            !upper.includes('MAAF');
+        // Buang kalimat percakapan
+        const isJunk = 
+            upper.includes('BERIKUT') || 
+            upper.includes('DAFTAR') || 
+            upper.includes('MAAF') ||
+            upper.includes('SAYA TIDAK MENEMUKAN');
 
-        return line.length >= 4 && hasSchoolKeyword && isNotJunk;
+        return line.length >= 4 && isSchool && !isJunk;
       })
-      .filter((value, index, self) => self.indexOf(value) === index) // Hapus duplikat
-      .sort();
-
-    if (schools.length === 0) {
-        console.warn("AI returned empty list. Raw response text:", text);
-    }
+      .filter((value, index, self) => self.indexOf(value) === index) // Unik
+      .slice(0, 15); // Batasi 15 sekolah saja biar rapi
 
     return schools;
 
   } catch (error) {
     console.error("Error searching schools:", error);
-    throw error;
+    // Jangan throw error agar UI tidak crash, biarkan return kosong agar fallback ke manual input
+    return [];
   }
 };
 
