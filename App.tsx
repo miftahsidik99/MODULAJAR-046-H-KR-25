@@ -4,10 +4,16 @@ import Auth from './components/Auth';
 import ModuleForm from './components/ModuleForm';
 import ModulePreview from './components/ModulePreview';
 import AdminDashboard from './components/AdminDashboard';
+import SplashScreen from './components/SplashScreen';
+import LandingPage from './components/LandingPage';
 import { generateModuleContent } from './services/geminiService';
 import { FileText, LogOut, History, PlusCircle, Lock, Save } from 'lucide-react';
 
+type AppState = 'SPLASH' | 'LANDING' | 'APP';
+
 const App: React.FC = () => {
+  const [appState, setAppState] = useState<AppState>('SPLASH');
+  
   const [user, setUser] = useState<User | null>(null);
   const [currentModule, setCurrentModule] = useState<ModuleConfig | null>(null);
   const [history, setHistory] = useState<ModuleConfig[]>([]);
@@ -90,6 +96,7 @@ const App: React.FC = () => {
     setView('form');
     setNewPassword('');
     setConfirmPassword('');
+    // Note: We stay in 'APP' state, user sees Auth screen again.
   };
 
   const handleChangePassword = (e: React.FormEvent) => {
@@ -173,12 +180,31 @@ const App: React.FC = () => {
       setView('form');
   };
 
+  // 1. SPLASH SCREEN
+  if (appState === 'SPLASH') {
+      return <SplashScreen onFinish={() => setAppState('LANDING')} />;
+  }
+
+  // 2. LANDING PAGE
+  if (appState === 'LANDING') {
+      return <LandingPage onEnterApp={() => setAppState('APP')} />;
+  }
+
+  // 3. MAIN APPLICATION (AUTH / DASHBOARD)
   if (!user) {
-    return <Auth onLogin={handleLogin} />;
+    return (
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+             <div className="absolute top-4 left-4 z-50">
+                <button onClick={() => setAppState('LANDING')} className="flex items-center gap-2 text-indigo-700 bg-white/80 backdrop-blur px-3 py-1.5 rounded-full shadow-sm hover:bg-white text-sm font-medium">
+                    <FileText className="w-4 h-4" /> Kembali ke Menu
+                </button>
+             </div>
+             <Auth onLogin={handleLogin} />
+        </div>
+    );
   }
 
   // --- ADMIN VIEW (ROBUST CHECK) ---
-  // Check against Enum and string literal to ensure it catches the role correctly
   if (user.role === UserRole.ADMIN) {
       return <AdminDashboard onLogout={handleLogout} />;
   }
@@ -249,7 +275,12 @@ const App: React.FC = () => {
           <div className="flex justify-between h-16">
             <div className="flex items-center gap-2">
               <FileText className="h-8 w-8 text-indigo-600" />
-              <span className="font-bold text-xl text-gray-800 hidden sm:block">ModulAjar.AI</span>
+              <div className="flex flex-col">
+                  <span className="font-bold text-lg leading-none text-gray-800 hidden sm:block">ModulAjar.AI</span>
+                  <button onClick={() => setAppState('LANDING')} className="text-[10px] text-left text-gray-500 hover:text-indigo-600 hover:underline">
+                      &larr; Ke Menu Utama
+                  </button>
+              </div>
             </div>
             <div className="flex items-center gap-4">
               <span className="text-sm text-gray-600 hidden sm:block">Halo, <b>{user.name}</b></span>
