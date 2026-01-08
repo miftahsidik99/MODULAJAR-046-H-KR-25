@@ -2,31 +2,41 @@ import { GoogleGenAI } from "@google/genai";
 import { ModuleConfig, AIRecommendation } from "../types";
 
 const getClient = () => {
-  // Use process.env.API_KEY as mandated by @google/genai coding guidelines.
-  // Assumes the environment is correctly configured with the API key.
-  return new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Value of process.env.API_KEY is injected by vite.config.ts during build
+  // Ini adalah nilai yang kita tanam dari vite.config.ts
+  const apiKey = process.env.API_KEY;
+
+  if (!apiKey) {
+    console.error("CRITICAL ERROR: API Key is missing in the browser environment.");
+    // Pesan error ini akan ditangkap UI untuk menampilkan alert "API Key Hilang"
+    throw new Error("Koneksi ke AI Gagal: API Key belum dikonfigurasi. Mohon cek pengaturan Vercel (VITE_GEMINI_API_KEY).");
+  }
+  return new GoogleGenAI({ apiKey });
 };
 
 export const findSchoolsWithAI = async (province: string, regency: string, district: string): Promise<string[]> => {
   try {
     const ai = getClient();
     
+    // Prompt yang sangat spesifik dan ketat untuk data sekolah
     const prompt = `
-      Tugas: Cari daftar nama Sekolah Dasar (SD) dan Madrasah Ibtidaiyah (MI) yang ada di kecamatan ini:
+      Tugas: Cari nama-nama Sekolah Dasar (SD) dan Madrasah Ibtidaiyah (MI) yang nyata di lokasi ini:
       Kecamatan ${district}, ${regency}, ${province}.
       
-      Gunakan Google Search untuk mencari data nyata terbaru.
+      Gunakan Google Search untuk mendapatkan data terbaru.
       
-      Instruksi Output:
-      1. HANYA berikan daftar nama sekolah.
+      Aturan Output Wajib:
+      1. HANYA tuliskan daftar nama sekolah.
       2. Satu sekolah per baris.
-      3. Jangan gunakan nomor, bullet points, atau tanda baca json.
-      4. Jangan berikan kalimat pengantar.
+      3. Jangan gunakan penomoran (1. 2.), bullet points (-), atau tanda bintang (*).
+      4. Jangan menyertakan alamat lengkap, cukup nama sekolah saja.
+      5. Bersihkan output dari teks pengantar seperti "Berikut daftarnya:".
 
-      Contoh Output Benar:
+      Format Contoh yang Benar:
       SDN 1 ${district}
       SDN 2 ${district}
-      MIS Al Falah
+      MIS Al Hidayah
+      SD Swasta Harapan Bangsa
     `;
 
     const response = await ai.models.generateContent({
@@ -40,32 +50,43 @@ export const findSchoolsWithAI = async (province: string, regency: string, distr
 
     const text = response.text || '';
     
-    // Parsing yang sangat agresif untuk membersihkan sampah karakter dari AI
+    // Parsing Logic: Pembersihan tingkat lanjut
     const schools = text.split('\n')
       .map(line => {
-        // Hapus markdown, angka di depan, sitasi [1], dan spasi
-        return line.replace(/^[*•\-\d\.]+\s*/, '') // Hapus bullet/angka
-                   .replace(/\[.*?\]/g, '')         // Hapus sitasi [1]
-                   .replace(/\*\*/g, '')            // Hapus bold markdown
-                   .trim();
+        // 1. Hapus karakter non-huruf di awal baris (misal: "1. ", "- ", "* ")
+        let clean = line.replace(/^[\d\.\-\*\•\s]+/, '').trim();
+        
+        // 2. Hapus sitasi referensi seperti [1], [source], [v1]
+        clean = clean.replace(/\[.*?\]/g, '');
+        
+        // 3. Hapus markdown formatting (bold/italic)
+        clean = clean.replace(/\*\*/g, '').replace(/\*/g, '').replace(/__/g, '');
+        
+        return clean;
       })
       .filter(line => {
         const upper = line.toUpperCase();
-        // Validasi: Harus ada kata SD, MI, atau SEKOLAH, dan panjang > 5 karakter
-        return line.length > 5 && (upper.includes('SD') || upper.includes('MI') || upper.includes('SEKOLAH'));
+        // 4. Validasi Kuat:
+        // - Minimal 5 huruf
+        // - Harus mengandung kata "SD" atau "MI" atau "SEKOLAH"
+        // - Bukan kalimat pengantar (misal tidak mengandung "Berikut adalah")
+        const isValidName = line.length > 5 && 
+                           (upper.includes('SD') || upper.includes('MI') || upper.includes('SEKOLAH')) &&
+                           !upper.includes('BERIKUT ADALAH') &&
+                           !upper.includes('DAFTAR SEKOLAH');
+        return isValidName;
       })
       .filter((value, index, self) => self.indexOf(value) === index) // Hapus duplikat
       .sort();
 
     if (schools.length === 0) {
-        console.warn("AI returned empty list. Raw text:", text);
+        console.warn("AI returned empty list. Raw response:", text);
     }
 
     return schools;
 
   } catch (error) {
     console.error("Error searching schools:", error);
-    // Lempar error agar UI tahu ini gagal koneksi/api, bukan sekadar tidak ada hasil
     throw error;
   }
 };
