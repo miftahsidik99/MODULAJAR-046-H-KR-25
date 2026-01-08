@@ -3,12 +3,10 @@ import { ModuleConfig, AIRecommendation } from "../types";
 
 const getClient = () => {
   // Value of process.env.API_KEY is injected by vite.config.ts during build
-  // Ini adalah nilai yang kita tanam dari vite.config.ts
   const apiKey = process.env.API_KEY;
 
   if (!apiKey) {
     console.error("CRITICAL ERROR: API Key is missing in the browser environment.");
-    // Pesan error ini akan ditangkap UI untuk menampilkan alert "API Key Hilang"
     throw new Error("Koneksi ke AI Gagal: API Key belum dikonfigurasi. Mohon cek pengaturan Vercel (VITE_GEMINI_API_KEY).");
   }
   return new GoogleGenAI({ apiKey });
@@ -18,25 +16,25 @@ export const findSchoolsWithAI = async (province: string, regency: string, distr
   try {
     const ai = getClient();
     
-    // Prompt yang sangat spesifik dan ketat untuk data sekolah
+    // Prompt diperbaiki agar lebih fleksibel tapi tetap terstruktur
     const prompt = `
-      Tugas: Cari nama-nama Sekolah Dasar (SD) dan Madrasah Ibtidaiyah (MI) yang nyata di lokasi ini:
+      Cari daftar nama Sekolah Dasar (SD) dan Madrasah Ibtidaiyah (MI) di kecamatan berikut:
       Kecamatan ${district}, ${regency}, ${province}.
       
-      Gunakan Google Search untuk mendapatkan data terbaru.
+      Gunakan Google Search untuk mencari data sekolah yang nyata (Negeri maupun Swasta).
       
-      Aturan Output Wajib:
-      1. HANYA tuliskan daftar nama sekolah.
-      2. Satu sekolah per baris.
-      3. Jangan gunakan penomoran (1. 2.), bullet points (-), atau tanda bintang (*).
-      4. Jangan menyertakan alamat lengkap, cukup nama sekolah saja.
-      5. Bersihkan output dari teks pengantar seperti "Berikut daftarnya:".
+      Instruksi Output:
+      - Berikan HANYA daftar nama sekolah.
+      - Pisahkan setiap nama sekolah dengan baris baru (Enter).
+      - Jangan gunakan nomor urut (1., 2.) atau bullet points.
+      - Jangan berikan kalimat pembuka seperti "Berikut adalah daftar...".
+      - Sertakan sekolah dengan nama awalan seperti "SDN", "SDS", "SD", "MI", "MIS", "UPT", "UPTD".
 
-      Format Contoh yang Benar:
+      Contoh Format:
       SDN 1 ${district}
-      SDN 2 ${district}
-      MIS Al Hidayah
-      SD Swasta Harapan Bangsa
+      SD Swasta Harapan
+      MIS Al-Falah
+      UPT SDN 2 ${district}
     `;
 
     const response = await ai.models.generateContent({
@@ -44,43 +42,50 @@ export const findSchoolsWithAI = async (province: string, regency: string, distr
       contents: prompt,
       config: {
         tools: [{ googleSearch: {} }],
-        thinkingConfig: { thinkingBudget: 0 } 
+        // Menghapus thinkingConfig: { thinkingBudget: 0 } agar model lebih leluasa menggunakan Search
       }
     });
 
     const text = response.text || '';
     
-    // Parsing Logic: Pembersihan tingkat lanjut
+    // Parsing Logic: Lebih longgar untuk menangkap variasi nama sekolah
     const schools = text.split('\n')
       .map(line => {
-        // 1. Hapus karakter non-huruf di awal baris (misal: "1. ", "- ", "* ")
+        // Bersihkan karakter non-huruf di awal (nomor, bullet, spasi)
         let clean = line.replace(/^[\d\.\-\*\•\s]+/, '').trim();
-        
-        // 2. Hapus sitasi referensi seperti [1], [source], [v1]
+        // Hapus sitasi [1], [2]
         clean = clean.replace(/\[.*?\]/g, '');
-        
-        // 3. Hapus markdown formatting (bold/italic)
-        clean = clean.replace(/\*\*/g, '').replace(/\*/g, '').replace(/__/g, '');
-        
+        // Hapus markdown bold/italic
+        clean = clean.replace(/[*_]/g, '');
         return clean;
       })
       .filter(line => {
         const upper = line.toUpperCase();
-        // 4. Validasi Kuat:
-        // - Minimal 5 huruf
-        // - Harus mengandung kata "SD" atau "MI" atau "SEKOLAH"
-        // - Bukan kalimat pengantar (misal tidak mengandung "Berikut adalah")
-        const isValidName = line.length > 5 && 
-                           (upper.includes('SD') || upper.includes('MI') || upper.includes('SEKOLAH')) &&
-                           !upper.includes('BERIKUT ADALAH') &&
-                           !upper.includes('DAFTAR SEKOLAH');
-        return isValidName;
+        
+        // Filter Validasi Sekolah:
+        // 1. Minimal 4 huruf (misal "SD 1" itu 4 huruf)
+        // 2. Harus mengandung salah satu kata kunci sekolah
+        const hasSchoolKeyword = 
+            upper.includes('SD') || 
+            upper.includes('MI') || 
+            upper.includes('SEKOLAH') || 
+            upper.includes('MADRASAH') ||
+            upper.includes('UPT'); // Unit Pelaksana Teknis sering dipakai di nama SD Negeri
+            
+        // 3. Bukan kalimat sampah/pengantar
+        const isNotJunk = 
+            !upper.includes('BERIKUT') && 
+            !upper.includes('DAFTAR') && 
+            !upper.includes('MENCARI') &&
+            !upper.includes('MAAF');
+
+        return line.length >= 4 && hasSchoolKeyword && isNotJunk;
       })
       .filter((value, index, self) => self.indexOf(value) === index) // Hapus duplikat
       .sort();
 
     if (schools.length === 0) {
-        console.warn("AI returned empty list. Raw response:", text);
+        console.warn("AI returned empty list. Raw response text:", text);
     }
 
     return schools;
