@@ -162,8 +162,10 @@ const App: React.FC = () => {
       }
 
       setView('preview');
-    } catch (error) {
-      alert("Terjadi kesalahan saat membuat modul. Pastikan API Key valid atau koneksi internet lancar.");
+    } catch (error: any) {
+      console.error(error);
+      const msg = error?.message || "Terjadi kesalahan tidak diketahui.";
+      alert(`Gagal membuat modul: ${msg}\n\nPastikan API Key valid (VITE_GEMINI_API_KEY) dan koneksi internet stabil.`);
     } finally {
       setIsGenerating(false);
     }

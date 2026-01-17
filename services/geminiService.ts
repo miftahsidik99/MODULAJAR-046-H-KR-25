@@ -172,12 +172,11 @@ export const generateModuleContent = async (config: ModuleConfig): Promise<strin
   `;
 
   try {
+    // Reverting to gemini-2.5-flash for maximum stability and removing thinkingConfig which might be causing timeouts/errors on some keys
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-2.5-flash',
       contents: prompt,
-      config: {
-        thinkingConfig: { thinkingBudget: 2048 }
-      }
+      // config: { thinkingConfig: { thinkingBudget: 2048 } } // REMOVED for stability
     });
 
     return response.text || "Gagal menghasilkan konten. Silakan coba lagi.";
@@ -217,7 +216,7 @@ export const recommendModelAndMethod = async (grade: number, subject: string, tp
 
    try {
      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-2.5-flash',
         contents: prompt,
         config: {
             responseMimeType: "application/json"
