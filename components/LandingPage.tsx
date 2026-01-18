@@ -25,9 +25,7 @@ const LandingPage: React.FC<Props> = ({ onEnterApp }) => {
                 <Sparkles className="w-4 h-4 text-yellow-400" />
                 <span>Platform Kurikulum Merdeka Terintegrasi AI</span>
             </div>
-            <h1 className="text-4xl md:text-6xl font-bold text-white mb-4 tracking-tight">
-                Pusat Perangkat Ajar Digital
-            </h1>
+            
             <p className="text-slate-300 text-lg md:text-xl max-w-2xl mx-auto font-light">
                 Pilih layanan yang Anda butuhkan untuk mempermudah administrasi pembelajaran.
             </p>
